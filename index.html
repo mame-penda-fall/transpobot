@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>TranspoBot</title>
+
+<style>
+body { font-family: Arial; margin: 0; background:#f4f6f8; }
+header { background:#1a56db; color:white; padding:15px; font-size:20px; }
+
+.container {
+display:grid;
+grid-template-columns: 1fr 1fr;
+gap:15px;
+padding:15px;
+}
+
+.card { background:white; padding:15px; border-radius:10px; }
+
+.stats {
+display:grid;
+grid-template-columns: repeat(2,1fr);
+gap:10px;
+}
+
+.stat {
+background:#eaf1ff;
+padding:10px;
+text-align:center;
+border-radius:8px;
+}
+
+.stat b { font-size:20px; display:block; }
+
+table { width:100%; border-collapse: collapse; font-size:13px; }
+th, td { border:1px solid #ddd; padding:6px; }
+th { background:#1a56db; color:white; }
+
+.chat {
+height:300px;
+overflow:auto;
+border:1px solid #ddd;
+padding:10px;
+background:#fff;
+}
+
+.msg { margin:5px 0; }
+.user { text-align:right; }
+
+.user span {
+background:#1a56db;
+color:white;
+padding:6px;
+border-radius:8px;
+display:inline-block;
+}
+
+.bot span {
+background:#eee;
+padding:6px;
+border-radius:8px;
+display:inline-block;
+}
+
+input { width:80%; padding:8px; }
+button { padding:8px; background:#1a56db; color:white; border:none; }
+</style>
+</head>
+
+<body>
+
+<header>🚌 TranspoBot - Dashboard IA</header>
+
+<div class="container">
+
+<!-- LEFT -->
+<div class="card">
+
+<h3>📊 KPI</h3>
+<div class="stats" id="stats"></div>
+
+<br>
+
+<h3>🚗 Véhicules</h3>
+<table id="vehicules"></table>
+
+<br>
+
+<h3>👨‍✈️ Chauffeurs</h3>
+<table id="chauffeurs"></table>
+
+<br>
+
+<h3>🚌 Trajets</h3>
+<table id="trajets"></table>
+
+</div>
+
+<!-- RIGHT -->
+<div class="card">
+
+<h3>💬 Chat IA</h3>
+
+<div class="chat" id="chat"></div>
+
+<br>
+
+<input id="msg" placeholder="Pose une question...">
+<button onclick="send()">Envoyer</button>
+
+</div>
+
+</div>
+
+<script>
+
+const API = "http://localhost:8000";
+
+/* -------- KPI -------- */
+async function loadStats() {
+let r = await fetch(API+"/api/stats");
+let d = await r.json();
+
+document.getElementById("stats").innerHTML = `
+<div class="stat"><b>${d.total_trajets}</b>Trajets</div>
+<div class="stat"><b>${d.trajets_en_cours}</b>En cours</div>
+<div class="stat"><b>${d.vehicules_actifs}</b>Véhicules</div>
+<div class="stat"><b>${d.incidents_ouverts}</b>Incidents</div>
+`;
+}
+
+/* -------- TABLE -------- */
+function renderTable(id,data){
+if(!data.length) return;
+
+let keys = Object.keys(data[0]);
+
+let html = "<tr>"+keys.map(k=>`<th>${k}</th>`).join("")+"</tr>";
+
+data.forEach(r=>{
+html += "<tr>"+keys.map(k=>`<td>${r[k]??""}</td>`).join("")+"</tr>";
+});
+
+document.getElementById(id).innerHTML = html;
+}
+
+/* -------- LOAD DATA -------- */
+async function loadAll(){
+
+let v = await fetch(API+"/api/vehicules");
+renderTable("vehicules", await v.json());
+
+let c = await fetch(API+"/api/chauffeurs");
+renderTable("chauffeurs", await c.json());
+
+let t = await fetch(API+"/api/trajets/recent");
+renderTable("trajets", await t.json());
+
+}
+
+/* -------- CHAT -------- */
+function add(role,text){
+let div=document.createElement("div");
+div.className="msg "+role;
+div.innerHTML=`<span>${text}</span>`;
+document.getElementById("chat").appendChild(div);
+}
+
+async function send() {
+  let input = document.getElementById("msg");
+  let q = input.value.trim();
+  if (!q) return;
+
+  input.value = "";
+
+  add("user", q);
+  add("bot", "⏳ Analyse en cours...");
+
+  try {
+    let r = await fetch(API + "/api/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ question: q })
+    });
+
+    let d = await r.json();
+
+    document.querySelector(".bot:last-child").remove();
+
+    let texte = d.answer;
+
+    if (d.count !== undefined) {
+      texte += ` (${d.count} résultat${d.count > 1 ? "s" : ""})`;
+    }
+
+    if (d.sql) {
+      texte += `<br><small style="color:gray">${d.sql}</small>`;
+    }
+
+    add("bot", texte);
+
+    if (d.data && d.data.length > 0) {
+      let keys = Object.keys(d.data[0]);
+
+      let table = "<table><tr>" + keys.map(k => `<th>${k}</th>`).join("") + "</tr>";
+
+      d.data.forEach(row => {
+        table += "<tr>" + keys.map(k => `<td>${row[k] ?? ""}</td>`).join("") + "</tr>";
+      });
+
+      table += "</table>";
+
+      add("bot", table);
+    }
+
+  } catch (e) {
+    document.querySelector(".bot:last-child").remove();
+    add("bot", "❌ Erreur serveur.");
+  }
+}
+
+/* -------- INIT -------- */
+loadStats();
+loadAll();
+
+</script>
+
+</body>
+</html>
